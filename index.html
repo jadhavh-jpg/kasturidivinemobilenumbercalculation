@@ -149,8 +149,17 @@
 
 <script>
 // ---------- Helpers ----------
+function onlyDigits(str){ return (str.match(/\d/g)||[]).join(''); }
+
+// Use last 10 digits for numerology (ignore country code if present)
+function normalizePhoneForCalc(raw){
+  const d = onlyDigits(raw);
+  if(d.length >= 10) return d.slice(-10);
+  return d; // <10 -> will be blocked by validation
+}
+
 function digitalRootWithSteps(numStr){
-  const digits = (numStr.match(/\\d/g) || []).map(d=>Number(d));
+  const digits = (numStr.match(/\d/g) || []).map(Number);
   const line = digits.join(" + ");
   const total = digits.reduce((a,b)=>a+b,0);
   function root(n){ while(n>9){ n = n.toString().split("").reduce((a,b)=>a+Number(b),0); } return n; }
@@ -159,17 +168,19 @@ function digitalRootWithSteps(numStr){
 }
 function psychicFromDOB(dateStr){
   if(!dateStr) return null;
-  const d = new Date(dateStr);
+  const d = new Date(dateStr);        // <input type="date"> gives YYYY-MM-DD value
+  if (isNaN(d)) return null;
   const day = d.getDate();
   const sum = day.toString().split("").reduce((a,b)=>a+Number(b),0);
   return sum > 9 ? sum.toString().split("").reduce((a,b)=>a+Number(b),0) : sum;
 }
-// Friendly numbers map (customizable)
+
+// Friendly numbers map
 const friendlyMap = {
   1:[1,2,4,7],
   2:[1,2,7],
   3:[3,6,9],
-  4:[1,5,6],     // your request
+  4:[1,5,6],     // as you wanted
   5:[1,5,6],
   6:[3,5,6,9],
   7:[1,2,7],
@@ -177,43 +188,44 @@ const friendlyMap = {
   9:[3,6,9]
 };
 function isFriendly(personality, phoneRoot){
-  const list = friendlyMap[personality] || [];
-  return list.includes(phoneRoot);
+  const list = friendlyMap[Number(personality)] || [];
+  return list.includes(Number(phoneRoot));
 }
 
-// ---------- App ----------
-const form = document.getElementById('numForm');
-const hello = document.getElementById('hello');
-const result = document.getElementById('result');
-const breakdown = document.getElementById('breakdown');
+// ---------- DOM ----------
+const form       = document.getElementById('numForm');
+const hello      = document.getElementById('hello');
+const resultBox  = document.getElementById('result');
+const breakdown  = document.getElementById('breakdown');
 const breakdown2 = document.getElementById('breakdown2');
 const friendInfo = document.getElementById('friendInfo');
-const personality = document.getElementById('personality');
-const phoneRoot = document.getElementById('phoneRoot');
-const verdict = document.getElementById('verdict');
+const personality= document.getElementById('personality');
+const phoneRoot  = document.getElementById('phoneRoot');
+const verdict    = document.getElementById('verdict');
 const summaryBox = document.getElementById('summaryBox');
-const yr = document.getElementById('yr');
-const waShare = document.getElementById('waShare');
+const yr         = document.getElementById('yr');
+const waShare    = document.getElementById('waShare');
 const phoneInput = document.getElementById('phone');
-const resetBtn = document.getElementById('resetBtn');
-
+const resetBtn   = document.getElementById('resetBtn');
 yr.textContent = new Date().getFullYear();
 
-form.addEventListener('submit', (e)=>{
-  e.preventDefault();
-  const name = document.getElementById('name').value.trim() || 'Friend';
-  const dob = document.getElementById('dob').value;
-  const phone = phoneInput.value;
+// Main calculate
+function calculate(){
+  const name = (document.getElementById('name').value || '').trim() || 'Friend';
+  const dob  = document.getElementById('dob').value;
+  const raw  = phoneInput.value;
+  // Allow +91, spaces, hyphens; we normalize
+  const digitsOnly = onlyDigits(raw);
 
-  const digitsOnly = (phone.match(/\\d/g)||[]).join('');
-  if(digitsOnly.length < 10 || digitsOnly.length > 13){
-    alert('Please enter a valid phone number (10–13 digits).');
-    return;
+  if(digitsOnly.length < 10){
+    // keep quiet while typing; show alert only on submit
+    return false;
   }
+  const forCalc = normalizePhoneForCalc(raw); // last 10 digits
   const psychic = psychicFromDOB(dob);
-  if(psychic==null){ alert('Please choose your Date of Birth.'); return; }
+  if(psychic==null){ return false; }
 
-  const step = digitalRootWithSteps(digitsOnly);
+  const step = digitalRootWithSteps(forCalc);
 
   hello.textContent = `🌟 Welcome, ${name}!`;
   breakdown.innerHTML = `${step.line} = <strong>${step.total}</strong>`;
@@ -225,48 +237,77 @@ form.addEventListener('submit', (e)=>{
   friendInfo.textContent = `Friendly numbers for Personality ${psychic}: [ ${friends.join(", ")} ]`;
 
   personality.textContent = `Personality Number: ${psychic}`;
-  phoneRoot.textContent = `Phone Root: ${step.root}`;
+  phoneRoot.textContent   = `Phone Root: ${step.root}`;
 
-  let cls = 'bad', msg = '❌ Your phone number is UNLUCKY.';
+  let cls = 'bad';
+  let msg = 'Your phone number is UNLUCKY.';
   if (psychic === step.root){
-    cls = 'good'; msg = '✅ Your phone number is LUCKY! (Personality and Phone Root match)';
+    cls = 'good'; msg = 'Your phone number is LUCKY! (Personality and Phone Root match)';
   } else if (isFriendly(psychic, step.root)){
-    cls = 'mid'; msg = '⚠️ Your phone number is PARTIALLY LUCKY. (Friendly with your Personality Number)';
+    cls = 'mid'; msg = 'Your phone number is PARTIALLY LUCKY. (Friendly with your Personality Number)';
   }
-
   summaryBox.classList.remove('good','mid','bad');
   summaryBox.classList.add(cls);
-  verdict.innerHTML = msg;
+  verdict.textContent = msg;
 
-  // WhatsApp share
-  const shareText =
+  // Share text (avoid replaceAll for older browsers)
+  const shareMsg = 
     `Kasturi Divine – Numerology Result%0A` +
     `Name: ${encodeURIComponent(name)}%0A` +
     `DOB: ${encodeURIComponent(dob)}%0A` +
-    `Phone: ${encodeURIComponent(digitsOnly)}%0A` +
+    `Phone (last 10 used): ${encodeURIComponent(forCalc)}%0A` +
     `Personality: ${psychic}%0A` +
     `Phone Root: ${step.root}%0A` +
     `Friendly with Personality: [${friends.join(', ')}]%0A` +
-    `Verdict: ${msg.replaceAll('❌','').replaceAll('✅','').replaceAll('⚠️','').trim()}%0A%0A` +
-    `For guidance, chat with us: wa.me/919300594567`;
+    `Verdict: ${encodeURIComponent(msg)}%0A%0A` +
+    `Chat with us: wa.me/919300594567`;
+  waShare.href = `https://wa.me/?text=${shareMsg}`;
 
-  waShare.href = `https://wa.me/?text=${shareText}`;
+  resultBox.style.display = 'block';
+  return true;
+}
 
-  result.style.display = 'block';
+// Submit -> validate & calculate
+form.addEventListener('submit', (e)=>{
+  e.preventDefault();
+  const digitsOnly = onlyDigits(phoneInput.value);
+  if(digitsOnly.length < 10){
+    alert('Please enter a valid phone number (at least 10 digits).');
+    return;
+  }
+  if(!document.getElementById('dob').value){
+    alert('Please choose your Date of Birth.');
+    return;
+  }
+  calculate();
+});
+
+// Auto-calc when 10 digits reached (user experience)
+phoneInput.addEventListener('input', ()=>{
+  // Keep only digits, +, spaces, hyphens visually okay—no forced mask
+  const digitsOnly = onlyDigits(phoneInput.value);
+  if(digitsOnly.length >= 10){
+    calculate();
+  } else {
+    resultBox.style.display = 'none';
+  }
 });
 
 // Try another number — keep Name & DOB
-resetBtn.addEventListener('click', ()=>{
-  phoneInput.value = '';
-  result.style.display = 'none';
-  phoneInput.focus();
-});
+if (resetBtn){
+  resetBtn.addEventListener('click', ()=>{
+    phoneInput.value = '';
+    resultBox.style.display = 'none';
+    phoneInput.focus();
+  });
+}
 
-// Prefill a neutral date for convenience
+// Prefill neutral date for convenience
 (function init(){
   const d = document.getElementById('dob');
   if(!d.value) d.valueAsDate = new Date('1985-01-01');
 })();
 </script>
+
 </body>
 </html>
